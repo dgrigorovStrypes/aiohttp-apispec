@@ -1,3 +1,6 @@
+import marshmallow
+
+
 def response_schema(schema, code=200, required=False, description=None):
     """
     Add response info into the swagger spec
@@ -23,7 +26,7 @@ def response_schema(schema, code=200, required=False, description=None):
     :param schema: :class:`Schema <marshmallow.Schema>` class or instance
     :param int code: HTTP response code
     """
-    if callable(schema):
+    if isinstance(schema, marshmallow.Schema) and callable(schema):
         schema = schema()
 
     def wrapper(func):

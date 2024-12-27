@@ -9,7 +9,7 @@ from aiohttp import web
 from aiohttp.hdrs import METH_ALL, METH_ANY
 from apispec import APISpec
 from apispec.core import VALID_METHODS_OPENAPI_V2
-from apispec.ext.marshmallow import MarshmallowPlugin, common
+from apispec.ext.marshmallow import MarshmallowPlugin, common, OpenAPIConverter
 from jinja2 import Template
 from webargs.aiohttpparser import parser
 
@@ -46,6 +46,8 @@ class OpenApiVersion(str, enum.Enum):
     V303 = "3.0.3"
 
 
+
+
 class AiohttpApiSpec:
     def __init__(
         self,
@@ -59,6 +61,7 @@ class AiohttpApiSpec:
         prefix='',
         schema_name_resolver=resolver,
         openapi_version=None,
+        plugin_inst=MarshmallowPlugin(schema_name_resolver=resolver),
         **kwargs,
     ):
         openapi_version = openapi_version or OpenApiVersion.V20
@@ -69,13 +72,18 @@ class AiohttpApiSpec:
                 f"Invalid `openapi_version`: {openapi_version!r}"
             ) from None
 
-        self.plugin = MarshmallowPlugin(schema_name_resolver=schema_name_resolver)
+        self.plugin = plugin_inst
+
         self.spec = APISpec(
             plugins=(self.plugin,),
             openapi_version=openapi_version.value,
             **kwargs,
         )
-
+        self.converter =  OpenAPIConverter(
+            openapi_version=self.spec.openapi_version,
+            schema_name_resolver=schema_name_resolver,
+            spec=self.spec,
+            )
         self.url = url
         self.swagger_path = swagger_path
         self.static_path = static_path
@@ -197,7 +205,7 @@ class AiohttpApiSpec:
         if method not in VALID_METHODS_OPENAPI_V2:
             return None
         for schema in data.pop("schemas", []):
-            parameters = self.plugin.converter.schema2parameters(
+            parameters = self.converter.schema2parameters(
                 schema["schema"], location=schema["location"], **schema["options"]
             )
             self._add_examples(schema["schema"], parameters, schema["example"])
@@ -214,7 +222,7 @@ class AiohttpApiSpec:
             responses = {}
             for code, actual_params in data["responses"].items():
                 if "schema" in actual_params:
-                    raw_parameters = self.plugin.converter.schema2parameters(
+                    raw_parameters = self.converter.schema2parameters(
                         actual_params["schema"],
                         location=DEFAULT_RESPONSE_LOCATION,
                         required=actual_params.get("required", False),
@@ -256,7 +264,7 @@ class AiohttpApiSpec:
         if not example:
             return
         schema_instance = common.resolve_schema_instance(ref_schema)
-        name = self.plugin.converter.schema_name_resolver(schema_instance)
+        name = self.converter.schema_name_resolver(schema_instance)
         add_to_refs = example.pop('add_to_refs')
         if self.spec.components.openapi_version.major < 3:
             if name and name in self.spec.components.schemas:
